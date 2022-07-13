@@ -13,9 +13,8 @@ class Simulation
         virtual ~Simulation();
 
         void eventStep();
-        void simStep(float deltaT);
+        void simStep();
         void render();
-
 
         sf::RenderWindow* window;
         int fieldWidth;
@@ -30,17 +29,18 @@ class Simulation
         Simulation::drawMode currentDrawMode;
         bool lmbPressed;
         bool shiftPressed;
-        int cursorRadius;
-
-        float simTime = 0;
+        int brushRadius;
+        double minPressure;
+        double maxPressure;
+        double flowMultiplier;
 
         struct pressureCell
         {
-            float pressure = 0;
-            float flowUp = 0;
-            float flowRight = 0;
-            float flowDown = 0;
-            float flowLeft = 0;
+            double pressure = 0;
+            double flowUp = 0;
+            double flowRight = 0;
+            double flowDown = 0;
+            double flowLeft = 0;
         };
 
         Simulation::pressureCell** pressureField;

@@ -2,13 +2,13 @@
 
 int main()
 {
-    Simulation sim(100, 100, 400);
+    Simulation sim(50, 50, 800);
 
     while (sim.window->isOpen())
     {
-        sf::sleep(sf::seconds(1 / 60));
+        sf::sleep(sf::seconds(1.0 / 500.0));
         sim.eventStep();
-        sim.simStep(0.001);
+        sim.simStep();
         sim.render();
     }
 
