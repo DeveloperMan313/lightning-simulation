@@ -23,16 +23,18 @@ class Simulation
 
         enum class drawMode
         {
-            Pressure, Lightning
+            Pressure, Ground, Lightning
         };
 
         Simulation::drawMode currentDrawMode;
         bool lmbPressed;
-        bool shiftPressed;
+        bool rmbPressed;
         int brushRadius;
-        double minPressure;
-        double maxPressure;
         double flowMultiplier;
+        int interpWindowSize;
+        double cellClearThreshold;
+        double interpolationStrength;
+        double flowIgnoreThreshold;
 
         struct pressureCell
         {
