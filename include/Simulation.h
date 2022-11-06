@@ -5,6 +5,7 @@
 #include <iostream>
 #include <cmath>
 
+using ld = long double;
 
 class Simulation
 {
@@ -30,27 +31,28 @@ class Simulation
         bool lmbPressed;
         bool rmbPressed;
         int brushRadius;
-        double flowMultiplier;
-        int interpWindowSize;
-        double cellClearThreshold;
-        double interpolationStrength;
-        double flowIgnoreThreshold;
+        int interpolationWindow;
+        ld flowMultiplier;
+        ld interpolationStrength;
+        ld flowDampMultiplier;
 
         struct pressureCell
         {
-            double pressure = 0;
-            double flowUp = 0;
-            double flowRight = 0;
-            double flowDown = 0;
-            double flowLeft = 0;
+            ld pressure = 0;
+            ld flowUp = 0;
+            ld flowRight = 0;
+            ld flowDown = 0;
+            ld flowLeft = 0;
+            ld inResistance() {
+                return (ld)1 / std::abs(this->pressure - 1);
+            }
+            ld outResistance() {
+                return (ld)1 / std::abs(this->pressure + 1);
+            }
         };
 
         Simulation::pressureCell** pressureField;
         sf::VertexArray* rectArray;
-
-    protected:
-
-    private:
 };
 
 #endif // SIMULATION_H
