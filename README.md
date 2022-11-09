@@ -5,8 +5,8 @@ This C++ SFML 2.5.1 application is an experiment project in simulating air press
 
 ## Graphics
 ### Pressure view
-* Blue - high pressure
-* Red - low pressure
+* Red - high pressure
+* Blue - low pressure
 
 ## Controls
 ### Pressure view
