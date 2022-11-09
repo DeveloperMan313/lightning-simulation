@@ -2,7 +2,6 @@
 #define SIMULATION_H
 
 #include <SFML/Graphics.hpp>
-#include <iostream>
 #include <cmath>
 
 using ld = long double;
@@ -44,10 +43,10 @@ class Simulation
             ld flowDown = 0;
             ld flowLeft = 0;
             ld inResistance() {
-                return (ld)1 / std::abs(this->pressure - 1);
+                return (ld)1 / std::max(std::abs(this->pressure - 1), (ld)0.001);
             }
             ld outResistance() {
-                return (ld)1 / std::abs(this->pressure + 1);
+                return (ld)1 / std::max(std::abs(this->pressure + 1), (ld)0.001);
             }
         };
 

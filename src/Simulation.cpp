@@ -15,9 +15,9 @@ Simulation::Simulation(int _fieldWidth, int _fieldHeight, int _windowWidth)
     this->rmbPressed = false;
     this->brushRadius = 5;
     this->interpolationWindow = 2;
-    this->flowMultiplier = 0.005;
-    this->interpolationStrength = 0.03;
-    this->flowDampMultiplier = 0.9999;
+    this->flowMultiplier = 0.2;
+    this->interpolationStrength = 0.05;
+    this->flowDampMultiplier = 0.999;
     // initialize this->pressureField
     this->pressureField = new Simulation::pressureCell*[_fieldHeight];
     for (int i = 0; i < _fieldHeight; i++)
@@ -110,7 +110,7 @@ void Simulation::simStep()
     // if lmb is pressed, handle pressure brush
     if (this->lmbPressed || this->rmbPressed)
     {
-        // get mouse position, subtract window header height 30 px
+        // get mouse position, subtract window header height 30 px (tested on windows)
         sf::Vector2i mousePos = sf::Mouse::getPosition() - this->window->getPosition();
         int centerX = mousePos.x / this->cellSide;
         int centerY = (mousePos.y - 30) / this->cellSide;
@@ -139,19 +139,14 @@ void Simulation::simStep()
             Simulation::pressureCell& cellRight = this->pressureField[y][x + 1];
             Simulation::pressureCell& cellDown = this->pressureField[y + 1][x];
             Simulation::pressureCell& cellLeft = this->pressureField[y][x - 1];
-
+            // precalculate current cell's resistance
             ld outRes = cell.outResistance();
-
+            // update flows where applicable
             if (y != 1) cell.flowUp += (cell.pressure - cellUp.pressure) * this->flowMultiplier / cellUp.inResistance() / outRes;
             if (x != this->fieldHeight - 2) cell.flowRight += (cell.pressure - cellRight.pressure) * this->flowMultiplier / cellRight.inResistance() / outRes;
             if (y != this->fieldHeight - 2) cell.flowDown += (cell.pressure - cellDown.pressure) * this->flowMultiplier / cellDown.inResistance() / outRes;
             if (x != 1) cell.flowLeft += (cell.pressure - cellLeft.pressure) * this->flowMultiplier / cellLeft.inResistance() / outRes;
-
-            cell.flowUp = std::clamp(cell.flowUp, (ld)-1, (ld)1);
-            cell.flowRight = std::clamp(cell.flowRight, (ld)-1, (ld)1);
-            cell.flowDown = std::clamp(cell.flowDown, (ld)-1, (ld)1);
-            cell.flowLeft = std::clamp(cell.flowLeft, (ld)-1, (ld)1);
-
+            // damp flow to make oscillations fade
             cell.flowUp *= this->flowDampMultiplier;
             cell.flowRight *= this->flowDampMultiplier;
             cell.flowDown *= this->flowDampMultiplier;
@@ -169,19 +164,26 @@ void Simulation::simStep()
             Simulation::pressureCell& cellRight = this->pressureField[y][x + 1];
             Simulation::pressureCell& cellDown = this->pressureField[y + 1][x];
             Simulation::pressureCell& cellLeft = this->pressureField[y][x - 1];
-
+            // clamp flow so pressure stays in bounds
+            cell.flowUp = std::clamp(cell.flowUp, std::max(cell.pressure - 1, -cellUp.pressure - 1) * 0.249, std::min(cell.pressure + 1, 1 - cellUp.pressure) * 0.249);
+            cell.flowRight = std::clamp(cell.flowRight, std::max(cell.pressure - 1, -cellRight.pressure - 1) * 0.249, std::min(cell.pressure + 1, 1 - cellRight.pressure) * 0.249);
+            cell.flowDown = std::clamp(cell.flowDown, std::max(cell.pressure - 1, -cellDown.pressure - 1) * 0.249, std::min(cell.pressure + 1, 1 - cellDown.pressure) * 0.249);
+            cell.flowLeft = std::clamp(cell.flowLeft, std::max(cell.pressure - 1, -cellLeft.pressure - 1) * 0.249, std::min(cell.pressure + 1, 1 - cellLeft.pressure) * 0.249);
+            // update pressure
             cell.pressure -= (cell.flowUp + cell.flowRight + cell.flowDown + cell.flowLeft);
             cellUp.pressure += cell.flowUp;
             cellRight.pressure += cell.flowRight;
             cellDown.pressure += cell.flowDown;
             cellLeft.pressure += cell.flowLeft;
-
+            // clamp pressure so it definitely stays in bounds
             cell.pressure = std::clamp(cell.pressure, (ld)-1, (ld)1);
             cellUp.pressure = std::clamp(cellUp.pressure, (ld)-1, (ld)1);
+            cellRight.pressure = std::clamp(cellRight.pressure, (ld)-1, (ld)1);
+            cellDown.pressure = std::clamp(cellDown.pressure, (ld)-1, (ld)1);
             cellLeft.pressure = std::clamp(cellLeft.pressure, (ld)-1, (ld)1);
         }
     }
-    // interpolate pressure for better looks
+    // interpolate pressure for better look
     ld interpWindowAreaReverse = 1.0 / (this->interpolationWindow * this->interpolationWindow);
     for (int y0 = 1; y0 < this->fieldHeight - this->interpolationWindow; y0++)
     {
@@ -207,8 +209,8 @@ void Simulation::simStep()
                     newSum += this->pressureField[y][x].pressure;
                 }
             }
-            ld dPressure = (sum - newSum) * interpWindowAreaReverse;
             // correct to preserve sum
+            ld dPressure = (sum - newSum) * interpWindowAreaReverse;
             for (int y = y0; y < y0 + this->interpolationWindow; y++)
             {
                 for (int x = x0; x < x0 + this->interpolationWindow; x++)
@@ -222,23 +224,22 @@ void Simulation::simStep()
 
 void Simulation::render()
 {
-    // loop through this->pressureField
     for(int y = 0; y < this->fieldHeight; y++)
     {
         for(int x = 0; x < this->fieldWidth; x++)
         {
             ld pressure = this->pressureField[y][x].pressure;
             // assign colors to pressure values:
-            // 1.0 - blue
-            // -1.0 - red
-            sf::Color color = (pressure >= 0) ? sf::Color(0, 0, pressure * 254) : sf::Color(-pressure * 254, 0, 0);
+            // 1.0 - red
+            // -1.0 - blue
+            sf::Color color = (pressure >= 0) ? sf::Color(pressure * 254, 0, 0) : sf::Color(0, 0, -pressure * 254);
             for (int v = (y * this->fieldWidth + x) * 4; v < (y * this->fieldWidth + x) * 4 + 4; v++)
             {
                 (*this->rectArray)[v].color = color;
             }
         }
     }
-    // draw this->rectArray
+    // display frame
     this->window->draw(*this->rectArray);
     this->window->display();
 }
