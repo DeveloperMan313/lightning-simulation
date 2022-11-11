@@ -15,27 +15,37 @@ class Simulation
         void eventStep();
         void simStep();
         void render();
+        void setCellColor(int x, int y, const sf::Color& color);
 
         sf::RenderWindow* window;
         int fieldWidth;
         int fieldHeight;
         int cellSide;
 
-        enum class drawMode
+        enum class DrawMode
         {
             Pressure, Ground, Lightning
         };
 
-        Simulation::drawMode currentDrawMode;
-        bool lmbPressed;
-        bool rmbPressed;
+        struct Mouse
+        {
+            struct Btn
+            {
+                bool down = false;
+                bool click = false;
+            };
+            Btn lmb, mmb, rmb;
+        };
+
         int brushRadius;
         int interpolationWindow;
         ld flowMultiplier;
         ld interpolationStrength;
         ld flowDampMultiplier;
+        Simulation::DrawMode drawMode;
+        Mouse mouse;
 
-        struct pressureCell
+        struct PressureCell
         {
             ld pressure = 0;
             ld flowUp = 0;
@@ -48,9 +58,10 @@ class Simulation
             ld outResistance() {
                 return (ld)1 / std::max(std::abs(this->pressure + 1), (ld)0.001);
             }
+            bool isGround = false;
         };
 
-        Simulation::pressureCell** pressureField;
+        Simulation::PressureCell** pressureField;
         sf::VertexArray* rectArray;
 };
 

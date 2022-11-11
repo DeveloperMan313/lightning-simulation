@@ -10,19 +10,19 @@ Simulation::Simulation(int _fieldWidth, int _fieldHeight, int _windowWidth)
     this->fieldWidth = _fieldWidth;
     this->fieldHeight = _fieldHeight;
     this->cellSide = _windowWidth / _fieldWidth;
-    this->currentDrawMode = Simulation::drawMode::Lightning;
-    this->lmbPressed = false;
-    this->rmbPressed = false;
+    this->drawMode = Simulation::DrawMode::Pressure;
+    this->mouse.lmb.down = false;
+    this->mouse.rmb.down = false;
     this->brushRadius = 5;
     this->interpolationWindow = 2;
     this->flowMultiplier = 0.2;
     this->interpolationStrength = 0.05;
     this->flowDampMultiplier = 0.999;
     // initialize this->pressureField
-    this->pressureField = new Simulation::pressureCell*[_fieldHeight];
+    this->pressureField = new Simulation::PressureCell*[_fieldHeight];
     for (int i = 0; i < _fieldHeight; i++)
     {
-        this->pressureField[i] = new Simulation::pressureCell[_fieldWidth];
+        this->pressureField[i] = new Simulation::PressureCell[_fieldWidth];
         // initialize quad vertex array this->rectArray
         for (int j = 0; j < _fieldWidth; j++)
         {
@@ -61,10 +61,12 @@ void Simulation::eventStep()
             switch (event.mouseButton.button)
             {
             case sf::Mouse::Button::Left:
-                this->lmbPressed = true;
+                this->mouse.lmb.down = true;
+                this->mouse.lmb.click = true;
                 break;
             case sf::Mouse::Button::Right:
-                this->rmbPressed = true;
+                this->mouse.rmb.down = true;
+                this->mouse.rmb.click = true;
                 break;
             default:
                 break;
@@ -74,26 +76,35 @@ void Simulation::eventStep()
             switch (event.mouseButton.button)
             {
             case sf::Mouse::Button::Left:
-                this->lmbPressed = false;
+                this->mouse.lmb.down = false;
+                this->mouse.lmb.click = false;
                 break;
             case sf::Mouse::Button::Right:
-                this->rmbPressed = false;
+                this->mouse.rmb.down = false;
+                this->mouse.rmb.click = false;
                 break;
             default:
                 break;
             }
             break;
+        case sf::Event::MouseWheelScrolled:
+            // resize brush on mouse wheel scroll
+            if (event.mouseWheelScroll.delta == 1 && this->brushRadius < 10)
+                this->brushRadius++;
+            if (event.mouseWheelScroll.delta == -1 && this->brushRadius > 1)
+                this->brushRadius--;
+            break;
         case sf::Event::KeyPressed:
             switch (event.key.code)
             {
             case sf::Keyboard::Key::Num1:
-                this->currentDrawMode = Simulation::drawMode::Pressure;
+                this->drawMode = Simulation::DrawMode::Pressure;
                 break;
             case sf::Keyboard::Key::Num2:
-                this->currentDrawMode = Simulation::drawMode::Ground;
+                this->drawMode = Simulation::DrawMode::Ground;
                 break;
             case sf::Keyboard::Key::Num3:
-                this->currentDrawMode = Simulation::drawMode::Lightning;
+                this->drawMode = Simulation::DrawMode::Lightning;
                 break;
             default:
                 break;
@@ -107,45 +118,80 @@ void Simulation::eventStep()
 
 void Simulation::simStep()
 {
-    // if lmb is pressed, handle pressure brush
-    if (this->lmbPressed || this->rmbPressed)
+    // if lmb or rmb is pressed, handle brush
+    if (this->mouse.lmb.down || this->mouse.rmb.down)
     {
         // get mouse position, subtract window header height 30 px (tested on windows)
         sf::Vector2i mousePos = sf::Mouse::getPosition() - this->window->getPosition();
         int centerX = mousePos.x / this->cellSide;
         int centerY = (mousePos.y - 30) / this->cellSide;
-        // add or reduce pressure in this->brushRadius radius of the cursor (currently the brush is square, radius = half a side)
+        // manage pressure and ground in this->brushRadius radius of the cursor (currently the brush is square, radius = half a side)
         for (int y = std::max(centerY - this->brushRadius + 1, 1); y < std::min(centerY + this->brushRadius, this->fieldHeight - 1); y++)
         {
             for (int x = std::max(centerX - this->brushRadius + 1, 1); x < std::min(centerX + this->brushRadius, this->fieldWidth - 1); x++)
             {
-                Simulation::pressureCell& cell = this->pressureField[y][x];
-                if (this->lmbPressed)
-                    cell.pressure += 0.3;
-                if (this->rmbPressed)
-                    cell.pressure -= 0.3;
-                cell.pressure = std::clamp(cell.pressure, (ld)-1, (ld)1);
+                Simulation::PressureCell& cell = this->pressureField[y][x];
+                if (this->drawMode == Simulation::DrawMode::Pressure)
+                {
+                    // add or reduce pressure
+                    if (cell.isGround) continue;
+                    if (this->mouse.lmb.down)
+                        cell.pressure += 0.2;
+                    if (this->mouse.rmb.down)
+                        cell.pressure -= 0.2;
+                    cell.pressure = std::clamp(cell.pressure, (ld)-1, (ld)1);
+                }
+                if (this->drawMode == Simulation::DrawMode::Ground)
+                {
+                    if (this->mouse.lmb.down)
+                    {
+                        // add ground, remove pressure and flow
+                        cell.isGround = true;
+                        cell.pressure = 0;
+                        cell.flowUp = 0;
+                        cell.flowRight = 0;
+                        cell.flowDown = 0;
+                        cell.flowLeft = 0;
+                        Simulation::PressureCell& cellUp = this->pressureField[y - 1][x];
+                        Simulation::PressureCell& cellRight = this->pressureField[y][x + 1];
+                        Simulation::PressureCell& cellDown = this->pressureField[y + 1][x];
+                        Simulation::PressureCell& cellLeft = this->pressureField[y][x - 1];
+                        cellUp.flowDown = 0;
+                        cellRight.flowLeft = 0;
+                        cellDown.flowUp = 0;
+                        cellLeft.flowRight = 0;
+                    }
+                    // remove ground
+                    if (this->mouse.rmb.down)
+                        cell.isGround = false;
+                }
             }
         }
     }
+    // set mouse buttons to not just clicked
+    this->mouse.lmb.click = false;
+    this->mouse.mmb.click = false;
+    this->mouse.rmb.click = false;
     // calculate flow
     for(int y = 1; y < this->fieldHeight - 1; y++)
     {
         for(int x = 1; x < this->fieldWidth - 1; x++)
         {
             // create links to current cell and its neighbors
-            Simulation::pressureCell& cell = this->pressureField[y][x];
-            Simulation::pressureCell& cellUp = this->pressureField[y - 1][x];
-            Simulation::pressureCell& cellRight = this->pressureField[y][x + 1];
-            Simulation::pressureCell& cellDown = this->pressureField[y + 1][x];
-            Simulation::pressureCell& cellLeft = this->pressureField[y][x - 1];
+            Simulation::PressureCell& cell = this->pressureField[y][x];
+            // skip ground cells
+            if (cell.isGround) continue;
+            Simulation::PressureCell& cellUp = this->pressureField[y - 1][x];
+            Simulation::PressureCell& cellRight = this->pressureField[y][x + 1];
+            Simulation::PressureCell& cellDown = this->pressureField[y + 1][x];
+            Simulation::PressureCell& cellLeft = this->pressureField[y][x - 1];
             // precalculate current cell's resistance
             ld outRes = cell.outResistance();
             // update flows where applicable
-            if (y != 1) cell.flowUp += (cell.pressure - cellUp.pressure) * this->flowMultiplier / cellUp.inResistance() / outRes;
-            if (x != this->fieldHeight - 2) cell.flowRight += (cell.pressure - cellRight.pressure) * this->flowMultiplier / cellRight.inResistance() / outRes;
-            if (y != this->fieldHeight - 2) cell.flowDown += (cell.pressure - cellDown.pressure) * this->flowMultiplier / cellDown.inResistance() / outRes;
-            if (x != 1) cell.flowLeft += (cell.pressure - cellLeft.pressure) * this->flowMultiplier / cellLeft.inResistance() / outRes;
+            if (!cellUp.isGround && y != 1) cell.flowUp += (cell.pressure - cellUp.pressure) * this->flowMultiplier / cellUp.inResistance() / outRes;
+            if (!cellRight.isGround && x != this->fieldHeight - 2) cell.flowRight += (cell.pressure - cellRight.pressure) * this->flowMultiplier / cellRight.inResistance() / outRes;
+            if (!cellDown.isGround && y != this->fieldHeight - 2) cell.flowDown += (cell.pressure - cellDown.pressure) * this->flowMultiplier / cellDown.inResistance() / outRes;
+            if (!cellLeft.isGround && x != 1) cell.flowLeft += (cell.pressure - cellLeft.pressure) * this->flowMultiplier / cellLeft.inResistance() / outRes;
             // damp flow to make oscillations fade
             cell.flowUp *= this->flowDampMultiplier;
             cell.flowRight *= this->flowDampMultiplier;
@@ -159,11 +205,13 @@ void Simulation::simStep()
         for(int x = 1; x < this->fieldWidth - 1; x++)
         {
             // create links to cell and its neighbors
-            Simulation::pressureCell& cell = this->pressureField[y][x];
-            Simulation::pressureCell& cellUp = this->pressureField[y - 1][x];
-            Simulation::pressureCell& cellRight = this->pressureField[y][x + 1];
-            Simulation::pressureCell& cellDown = this->pressureField[y + 1][x];
-            Simulation::pressureCell& cellLeft = this->pressureField[y][x - 1];
+            Simulation::PressureCell& cell = this->pressureField[y][x];
+            // skip ground cells
+            if (cell.isGround) continue;
+            Simulation::PressureCell& cellUp = this->pressureField[y - 1][x];
+            Simulation::PressureCell& cellRight = this->pressureField[y][x + 1];
+            Simulation::PressureCell& cellDown = this->pressureField[y + 1][x];
+            Simulation::PressureCell& cellLeft = this->pressureField[y][x - 1];
             // clamp flow so pressure stays in bounds
             cell.flowUp = std::clamp(cell.flowUp, std::max(cell.pressure - 1, -cellUp.pressure - 1) * 0.249, std::min(cell.pressure + 1, 1 - cellUp.pressure) * 0.249);
             cell.flowRight = std::clamp(cell.flowRight, std::max(cell.pressure - 1, -cellRight.pressure - 1) * 0.249, std::min(cell.pressure + 1, 1 - cellRight.pressure) * 0.249);
@@ -184,20 +232,27 @@ void Simulation::simStep()
         }
     }
     // interpolate pressure for better look
-    ld interpWindowAreaReverse = 1.0 / (this->interpolationWindow * this->interpolationWindow);
     for (int y0 = 1; y0 < this->fieldHeight - this->interpolationWindow; y0++)
     {
         for(int x0 = 1; x0 < this->fieldWidth - this->interpolationWindow; x0++)
         {
             ld sum = 0.0;
+            int groundCnt = 0;
             // calculate average pressure
             for (int y = y0; y < y0 + this->interpolationWindow; y++)
             {
                 for (int x = x0; x < x0 + this->interpolationWindow; x++)
                 {
-                    sum += this->pressureField[y][x].pressure;
+                    Simulation::PressureCell& cell = this->pressureField[y][x];
+                    if (cell.isGround)
+                    {
+                        groundCnt++;
+                        continue;
+                    }
+                    sum += cell.pressure;
                 }
             }
+            ld interpWindowAreaReverse = 1.0 / (this->interpolationWindow * this->interpolationWindow - groundCnt);
             ld avg = sum * interpWindowAreaReverse;
             ld newSum = 0.0;
             // set pressure closer to average
@@ -205,8 +260,10 @@ void Simulation::simStep()
             {
                 for (int x = x0; x < x0 + this->interpolationWindow; x++)
                 {
-                    this->pressureField[y][x].pressure += this->interpolationStrength * (avg - this->pressureField[y][x].pressure);
-                    newSum += this->pressureField[y][x].pressure;
+                    Simulation::PressureCell& cell = this->pressureField[y][x];
+                    if (cell.isGround) continue;
+                    cell.pressure += this->interpolationStrength * (avg - cell.pressure);
+                    newSum += cell.pressure;
                 }
             }
             // correct to preserve sum
@@ -215,7 +272,9 @@ void Simulation::simStep()
             {
                 for (int x = x0; x < x0 + this->interpolationWindow; x++)
                 {
-                    this->pressureField[y][x].pressure += dPressure;
+                    Simulation::PressureCell& cell = this->pressureField[y][x];
+                    if (cell.isGround) continue;
+                    cell.pressure += dPressure;
                 }
             }
         }
@@ -228,18 +287,50 @@ void Simulation::render()
     {
         for(int x = 0; x < this->fieldWidth; x++)
         {
-            ld pressure = this->pressureField[y][x].pressure;
-            // assign colors to pressure values:
-            // 1.0 - red
-            // -1.0 - blue
-            sf::Color color = (pressure >= 0) ? sf::Color(pressure * 254, 0, 0) : sf::Color(0, 0, -pressure * 254);
-            for (int v = (y * this->fieldWidth + x) * 4; v < (y * this->fieldWidth + x) * 4 + 4; v++)
+            // set cell color
+            Simulation::PressureCell& cell = this->pressureField[y][x];
+            if (!cell.isGround)
             {
-                (*this->rectArray)[v].color = color;
+                ld pressure = cell.pressure;
+                // assign colors to pressure values:
+                // 1.0 - red
+                // -1.0 - blue
+                sf::Color color = (pressure >= 0) ? sf::Color(pressure * 254, 0, 0) : sf::Color(0, 0, -pressure * 254);
+                this->setCellColor(x, y, color);
+            }
+            // set ground color to gray
+            if (cell.isGround) this->setCellColor(x, y, sf::Color(50, 50, 50));
+        }
+    }
+    sf::Vector2i mousePos = sf::Mouse::getPosition() - this->window->getPosition();
+    int centerX = mousePos.x / this->cellSide;
+    int centerY = (mousePos.y - 30) / this->cellSide;
+    if (centerX >= 0 && centerY >= 0)
+    {
+        // display brush outline
+        int minY = centerY - this->brushRadius + 1;
+        int maxY = centerY + this->brushRadius;
+        for (int y = minY; y < maxY; y++)
+        {
+            for (int x = centerX - this->brushRadius + 1;
+            x < centerX + this->brushRadius;
+            x += 1 + (y != minY && y != maxY - 1) * (this->brushRadius * 2 - 3))
+            {
+                if (x > 0 && y > 0 && x < this->fieldWidth - 1 && y < this->fieldHeight - 1)
+                    this->setCellColor(x, y, sf::Color(200, 200, 200));
             }
         }
     }
     // display frame
     this->window->draw(*this->rectArray);
     this->window->display();
+}
+
+void Simulation::setCellColor(int x, int y, const sf::Color& color)
+{
+    // set vertices color
+    for (int v = (y * this->fieldWidth + x) * 4; v < (y * this->fieldWidth + x) * 4 + 4; v++)
+    {
+        (*this->rectArray)[v].color = color;
+    }
 }
